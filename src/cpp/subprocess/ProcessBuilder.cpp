@@ -45,6 +45,25 @@ namespace subprocess {
             message += std::strerror(errno_code);
             throw OSError(message);
         }
+        struct NoSigPipe {
+        #ifndef _WIN32
+            NoSigPipe() {
+                // get the current state
+                sigprocmask(SIG_BLOCK, NULL, &old_state);
+
+                sigset_t set = old_state;
+                sigaddset(&set, SIGPIPE);
+                sigprocmask(SIG_BLOCK, &set, NULL);
+            }
+
+            ~NoSigPipe() {
+                sigprocmask(SIG_BLOCK, &old_state, NULL);
+            }
+
+        private:
+            sigset_t old_state;
+        #endif
+        };
     }
     double monotonic_seconds() {
         static bool needs_init = true;
@@ -91,6 +110,7 @@ namespace subprocess {
     };
     std::thread pipe_thread(PipeHandle input, std::ostream* output) {
         return std::thread([=]() {
+            details::NoSigPipe noSigPipe;
             AutoClosePipe autoclose(input);
             std::vector<char> buffer(2048);
             while (true) {
@@ -102,58 +122,83 @@ namespace subprocess {
         });
     }
 
+    [[nodiscard]]
+    static ssize_t fwrite_fully(FILE* output, const void* buffer, size_t size) {
+        const uint8_t* cursor = reinterpret_cast<const uint8_t*>(buffer);
+        ssize_t total = 0;
+        while (total < size) {
+            auto transferred = fwrite(cursor, 1, size - total, output);
+            if (transferred == 0)
+                break;
+            cursor += transferred;
+            total += transferred;
+        }
+        return total;
+    }
+
     std::thread pipe_thread(PipeHandle input, FILE* output) {
         return std::thread([=]() {
+            details::NoSigPipe noSigPipe;
             AutoClosePipe autoclose(input);
             std::vector<char> buffer(2048);
             while (true) {
-                ssize_t transfered = pipe_read(input, &buffer[0], buffer.size());
-                if (transfered <= 0)
+                ssize_t transferred = pipe_read(input, &buffer[0], buffer.size());
+                if (transferred <= 0)
                     break;
-                fwrite(&buffer[0], 1, transfered, output);
+                transferred = fwrite_fully(output, &buffer[0], transferred);
+                if (transferred <= 0)
+                    break;
             }
         });
     }
+
     std::thread pipe_thread(FILE* input, PipeHandle output) {
         return std::thread([=]() {
+            details::NoSigPipe noSigPipe;
             AutoClosePipe autoclose(output);
             std::vector<char> buffer(2048);
             while (true) {
-                ssize_t transfered = fread(&buffer[0], 1, buffer.size(), input);
-                if (transfered <= 0)
+                ssize_t transferred = fread(&buffer[0], 1, buffer.size(), input);
+                if (transferred <= 0)
                     break;
-                pipe_write(output, &buffer[0], transfered);
+                transferred = pipe_write_fully(output, &buffer[0], transferred);
+                if (transferred <= 0)
+                    break;
             }
         });
     }
     std::thread pipe_thread(std::string& input, PipeHandle output) {
         return std::thread([input(move(input)), output]() {
+            details::NoSigPipe noSigPipe;
             AutoClosePipe autoclose(output);
 
             std::size_t pos = 0;
             while (pos < input.size()) {
-                ssize_t transfered = pipe_write(output, input.c_str()+pos, input.size() - pos);
-                if (transfered <= 0)
+                ssize_t transferred = pipe_write_fully(output, input.c_str()+pos, input.size() - pos);
+                if (transferred <= 0)
                     break;
-                pos += transfered;
+                pos += transferred;
             }
         });
     }
     std::thread pipe_thread(std::istream* input, PipeHandle output) {
         return std::thread([=]() {
+            details::NoSigPipe noSigPipe;
             AutoClosePipe autoclose(output);
             std::vector<char> buffer(2048);
             while (true) {
                 input->read(&buffer[0], buffer.size());
-                ssize_t transfered = input->gcount();
+                ssize_t transferred = input->gcount();
                 if (input->bad())
                     break;
-                if (transfered <= 0) {
+                if (transferred <= 0) {
                     if (input->eof())
                         break;
                     continue;
                 }
-                pipe_write(output, &buffer[0], transfered);
+                transferred = pipe_write_fully(output, &buffer[0], transferred);
+                if (transferred <= 0)
+                    break;
             }
         });
     }
@@ -279,6 +324,7 @@ namespace subprocess {
     Popen::~Popen() {
         close();
     }
+
     void Popen::close() {
         if (cin_thread.joinable())
             cin_thread.join();

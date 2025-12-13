@@ -37,3 +37,4 @@
 ./doc-gen
 
 __pycache__/
+./runme

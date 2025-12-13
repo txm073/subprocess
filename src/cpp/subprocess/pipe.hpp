@@ -47,6 +47,7 @@ namespace subprocess {
     };
 
     /** Peak into how many bytes available in pipe to read. */
+    [[nodiscard]]
     ssize_t pipe_peak_bytes(PipeHandle pipe);
 
     /** Closes a pipe handle.
@@ -76,6 +77,7 @@ namespace subprocess {
             to make both ends to be inheritble at creation then you likely have
             a bug.
     */
+    [[nodiscard]]
     PipePair pipe_create(bool inheritable = false);
 
     /** Set the pipe to be inheritable or not for subprocess.
@@ -90,12 +92,23 @@ namespace subprocess {
         @returns    -1 on error. if 0 it could be the end, or perhaps wait for
                     more data.
     */
+    [[nodiscard]]
     ssize_t pipe_read(PipeHandle, void* buffer, size_t size);
+
     /**
         @returns    -1 on error. if 0 it could be full, or perhaps wait for
                     more data.
     */
+    [[nodiscard]]
     ssize_t pipe_write(PipeHandle, const void* buffer, size_t size);
+
+    /** Like pipe_write but keep writing while return value is > 0.
+
+        @returns    bytes written on success, (-total_transferred - 1) on error,
+                    if 0 it could be full,
+    */
+    [[nodiscard]]
+    ssize_t pipe_write_fully(PipeHandle, const void* buffer, size_t size);
 
     /** Sets the blocking bit.
 
@@ -120,6 +133,7 @@ namespace subprocess {
         @return all data read from pipe as a string object. This works fine
                 with binary data.
     */
+    [[nodiscard]]
     std::string pipe_read_all(PipeHandle handle);
 
     /** Waits for the pipes to be change state.
@@ -133,12 +147,14 @@ namespace subprocess {
         @param seconds
             The timeout in seconds to wait for. -1 for indefinate
     */
+    [[nodiscard]]
     int pipe_wait_for_read(
         PipeHandle pipe,
         double seconds
     );
 
     /** Will read up to size and not block until buffer is filled. */
+    [[nodiscard]]
     ssize_t pipe_read_some(PipeHandle, void* buffer, size_t size);
 
     /** Opens a file and returns the handle.
@@ -157,6 +173,7 @@ namespace subprocess {
 
         @returns the handle to the opened file, or kBadPipeValue on error
     */
+    [[nodiscard]]
     PipeHandle pipe_file(const char* filename, const char* mode);
 
     #if 0

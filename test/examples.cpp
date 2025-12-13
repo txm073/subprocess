@@ -56,7 +56,7 @@ void popen_examples() {
     Popen popen = subprocess::RunBuilder({"echo", "hello", "world"})
         .cout(PipeOption::pipe).popen();
     char buf[1024] = {0}; // initializes everything to 0
-    subprocess::pipe_read(popen.cout, buf, 1024);
+    auto ignore = subprocess::pipe_read(popen.cout, buf, 1024);
     std::cout << buf;
     // the destructor will call wait on your behalf.
     popen.close();
@@ -70,7 +70,7 @@ void popen_examples() {
         you provide buffers for cin, internally the library spins it's own thread.
     */
     std::thread write_thread([&]() {
-        subprocess::pipe_write(popen.cin, "hello world\n", std::strlen("hello world\n"));
+        auto ignore = subprocess::pipe_write(popen.cin, "hello world\n", std::strlen("hello world\n"));
         // no more data to send. If we don't close we may run into a deadlock as
         // we are looking to read for more.
         popen.close_cin();
@@ -79,7 +79,7 @@ void popen_examples() {
     for (auto& c : buf)
         c = 0;
 
-    subprocess::pipe_read(popen.cout, buf, 1024);
+    ignore = subprocess::pipe_read(popen.cout, buf, 1024);
     std::cout << buf;
     popen.close();
     if (write_thread.joinable())

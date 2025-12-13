@@ -1,5 +1,6 @@
 #include <cxxtest/TestSuite.h>
 #include <thread>
+#include <mutex>
 
 #include <subprocess.hpp>
 
@@ -107,7 +108,8 @@ public:
         // use thread to prevent blocking in case the OS desides to wait on read
         std::thread thread([&] {
             subprocess::sleep_seconds(1);
-            subprocess::pipe_write(pipe.output, str.data(), str.size());
+            auto transferred = subprocess::pipe_write(pipe.output, str.data(), str.size());
+            TS_ASSERT_EQUALS(transferred, str.size());
         });
         std::vector<char> text;
         text.resize(32);
@@ -442,7 +444,8 @@ public:
         std::string str = "hello world";
         std::thread thread([&] {
             subprocess::sleep_seconds(0.1);
-            pipe_write(pipe.output, str.data(), str.size());
+            auto transferred = pipe_write(pipe.output, str.data(), str.size());
+            TS_ASSERT_EQUALS(transferred, str.size());
         });
         std::vector<char> buffer;
         buffer.resize(1024);
@@ -509,6 +512,83 @@ public:
         TS_ASSERT_EQUALS(transferred, str.size());
         std::string str2 = data.data();
         TS_ASSERT_EQUALS(str, str2);
+    }
+
+    void testWriteClosed() {
+        subprocess::EnvGuard guard;
+        prepend_this_to_path();
+
+        class DevZeroStreamBuf : public std::streambuf {
+        public:
+            using Super = std::streambuf;
+            using int_type = typename Super::int_type;
+            using char_type = std::streambuf::char_type;
+            using traits_type = Super::traits_type;
+            void close() {
+                open = false;
+            }
+        protected:
+            int_type underflow() override {
+                return open? traits_type::to_int_type('\0') : traits_type::eof();
+            }
+
+            std::streamsize xsgetn(char_type* s, std::streamsize n) override {
+                if (!open)
+                    return 0;
+                std::memset(s, 0, n * sizeof(char_type));
+                return n;
+            }
+
+            int_type overflow(int_type c) override {
+                return open? traits_type::not_eof(c) : traits_type::eof();
+            }
+
+            std::streamsize xsputn(const char_type* s, std::streamsize n) override {
+                return open? n : 0;
+            }
+
+            bool open = true;
+        };
+        DevZeroStreamBuf zero;
+        std::istream stream(&zero);
+
+        bool write_failed = false;
+        std::vector<int> order;
+        std::mutex mutex;
+
+        subprocess::Popen echo = RunBuilder({"echo", "hello", "world"})
+            .cin(&stream)
+            .cout(PipeOption::pipe).popen();
+
+        /*  this thread should start after echo is launched in case it takes a while
+            for echo to start.
+        */
+        std::thread thread([&] {
+            subprocess::sleep_seconds(1);
+            std::unique_lock<std::mutex> lock(mutex);
+            order.push_back(1);
+            zero.close();
+        });
+
+        std::vector<char> buffer;
+        buffer.resize(64);
+        auto transferred = subprocess::pipe_read(echo.cout, &buffer[0], buffer.size());
+        std::string expected = "hello world" EOL;
+        TS_ASSERT_EQUALS(transferred, expected.size());
+        echo.close();
+        std::unique_lock<std::mutex> lock(mutex);
+        order.push_back(0);
+        lock.unlock();
+        if (thread.joinable())
+            thread.join();
+        /*  on failure the internal thread will never close until the read end
+            closes which will result in order to be 1, 0.
+        */
+        TS_ASSERT_EQUALS(order.size(), 2);
+        TS_ASSERT_EQUALS(order[0], 0);
+        TS_ASSERT_EQUALS(order[1], 1);
+        std::string cout = &buffer[0];
+        TS_ASSERT_EQUALS(cout, expected);
     }
 
 

@@ -319,6 +319,23 @@ namespace subprocess {
         return second + 1;
     }
 
+    ssize_t pipe_write_fully(PipeHandle handle, const void* buffer, size_t size) {
+        ssize_t transferred = 0;
+        ssize_t total = 0;
+        const uint8_t* cursor = reinterpret_cast<const uint8_t*>(buffer);
+        while (total < size) {
+            ssize_t transferred = pipe_write(handle, cursor, size - total);
+            if (transferred < 0)
+                return -total - 1;
+            if (transferred == 0)
+                break;
+            cursor += transferred;
+            total += transferred;
+        }
+
+        return total;
+    }
+
     PipeHandle pipe_file(const char* filename, const char* mode) {
         using std::strchr;
 #ifdef _WIN32

@@ -185,7 +185,7 @@ namespace subprocess {
         /** equivalent to send_signal(SIGKILL) */
         bool kill();
 
-        /** Destructs the object and initializes to basic state */
+        /** Destructs the object and initializes to base state */
         void close();
         /** Closes the cin pipe */
         void close_cin() {

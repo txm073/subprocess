@@ -167,6 +167,19 @@ All tests pass on linux & mac. Most pass under mingw & MSVC.
 
 # Changelog
 
+# 0.6.0 TBA
+
+**Breaking Changes**
+
+- `[[nodiscard]]`` added to pipe_x functions. Most likely an error on your part
+  if the return value is ignored.
+
+**Non-breaking changes**
+- Fixed: threads ignoring return value of pipe_write and never terminating
+- Changed: internal threads block SIGPIPE on a thread basis. Threads terminate
+  and close pipes as needed on pipe errors. This breaks the pipe chains which
+  prevents potential hangs with deep pipe chains.
+
 # 0.5.0 2025-12-09
 
 **Breaking Changes**
