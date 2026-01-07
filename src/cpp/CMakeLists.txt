@@ -2,7 +2,7 @@ file(GLOB src ./subprocess/*.cpp)
 
 find_package(Threads REQUIRED)
 
-add_library(subprocess ${src})
+add_library(subprocess STATIC ${src})
 target_include_directories(subprocess PUBLIC
     ./
 )
